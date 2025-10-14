@@ -1,0 +1,68 @@
+name: rndm sender (dispatch at scheduled random times)
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # 15分おきにチェック
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check schedule and maybe send
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ ! -f schedule.json ]; then
+            echo "No schedule.json yet; skip."
+            exit 0
+          fi
+
+          python - << 'PY'
+          import json, os, sys, random, subprocess
+          from datetime import datetime, timedelta, timezone
+          JST = timezone(timedelta(hours=9))
+          now = datetime.now(JST)
+
+          with open("schedule.json", "r") as f:
+            data = json.load(f)
+
+          times = [datetime.fromisoformat(t) for t in data.get("times_iso", [])]
+          sent  = set(data.get("sent_iso", []))
+          window = timedelta(minutes=15)
+
+          due = [t for t in times if t.isoformat() not in sent and t <= now < (t + window)]
+
+          if not due:
+            print("No due slot; skip.")
+            sys.exit(0)
+
+          url = os.environ.get("WEBHOOK_URL", "")
+          if not url:
+            sys.exit(1)
+
+          for t in due:
+            n = f"{random.randint(1,9999):04d}"
+            subprocess.run([
+              "curl","-sS","-H","Content-Type: application/json",
+              "-d", f'{{"content":"{n}"}}', url
+            ])
+            sent.add(t.isoformat())
+
+          data["sent_iso"] = sorted(sent)
+          with open("schedule.json","w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+          PY
+
+      - name: Commit sent marks (if any)
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+          else
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git add schedule.json
+            git commit -m "mark: sent slots"
+            git push
+          fi
