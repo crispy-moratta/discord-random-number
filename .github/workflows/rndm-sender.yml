@@ -3,7 +3,7 @@ name: rndm sender
 on:
   schedule:
     - cron: "*/5 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,59 +22,82 @@ jobs:
           python3 << 'PY'
           import json
           import random
-          from datetime import datetime, timedelta, timezone
+          import urllib.request
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
 
-          JST = timezone(timedelta(hours=9))
-          now = datetime.now(JST)
+          now = datetime.now(ZoneInfo("Asia/Tokyo"))
 
-          with open("schedule.json", "r") as f:
+          with open("schedule.json", "r", encoding="utf-8") as f:
               data = json.load(f)
 
-          sent = set(data.get("sent_iso", []))
+          times = data["times_iso"]
+          sent = set(data["sent_iso"])
+
           due = []
 
-          for t in data.get("times_iso", []):
+          for t in times:
               dt = datetime.fromisoformat(t)
+
+              print(f"CHECK: {t}")
+              print(f"NOW  : {now.isoformat()}")
+
               if dt <= now and t not in sent:
                   due.append(t)
 
-          if due:
-              emojis = ["🧊", "🪨", "🍵", "🧱", "🪙", "📎", "🍎", "💡", "🍰", "👐"]
+          print(f"DUE_COUNT: {len(due)}")
 
-              if random.random() < 0.1:
-                  message = random.choice(emojis)
-              else:
-                  message = str(random.randint(1, 100))
-
-              with open("message.txt", "w") as f:
-                  f.write(message)
-
-              for t in due:
-                  sent.add(t)
-
-              data["sent_iso"] = sorted(sent)
-
-              with open("schedule.json", "w") as f:
-                  json.dump(data, f, ensure_ascii=False, indent=2)
-
-              print(f"SEND: {message}")
-          else:
+          if not due:
               print("NO_SEND")
+              raise SystemExit(0)
+
+          emojis = [
+              "🧊",
+              "🪨",
+              "🍵",
+              "🧱",
+              "🪙",
+              "📎",
+              "🍎",
+              "💡",
+              "🍰",
+              "👐"
+          ]
+
+          message = random.choice(emojis)
+
+          print("SEND_TRIGGERED")
+          print("MESSAGE:", message)
+          print("DUE:", due)
+
+          payload = json.dumps({
+              "content": message
+          }).encode("utf-8")
+
+          req = urllib.request.Request(
+              DISCORD_WEBHOOK_URL,
+              data=payload,
+              headers={"Content-Type": "application/json"}
+          )
+
+          urllib.request.urlopen(req)
+
+          data["sent_iso"].extend(due)
+
+          with open("schedule.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+
+          print("SENT_OK")
           PY
-
-          if [ -f message.txt ]; then
-            MSG=$(cat message.txt)
-
-            curl -v -X POST "$DISCORD_WEBHOOK_URL" \
-              -H "Content-Type: application/json" \
-              -d "{\"content\":\"$MSG\"}"
-          fi
 
       - name: Commit sent status
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+          git config user.name github-actions
+          git config user.email github-actions@github.com
 
           git add schedule.json
-          git commit -m "Update sent status" || echo "No changes"
+
+          git diff --cached --quiet || \
+          git commit -m "Update sent status"
+
           git push
