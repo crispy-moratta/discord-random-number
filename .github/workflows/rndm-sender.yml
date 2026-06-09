@@ -19,51 +19,58 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          python - << 'PY'
+          python3 << 'PY'
           import json
-          import os
-          import random
-          import urllib.request
           from datetime import datetime, timedelta, timezone
 
           JST = timezone(timedelta(hours=9))
           now = datetime.now(JST)
 
-          with open("schedule.json") as f:
+          with open("schedule.json", "r") as f:
               data = json.load(f)
 
           sent = set(data.get("sent_iso", []))
+
+          due = None
 
           for t in data["times_iso"]:
               dt = datetime.fromisoformat(t)
 
               if dt <= now and t not in sent:
+                  due = t
+                  break
 
-                  payload = json.dumps({
-                      "content": str(random.randint(1, 100))
-                  }).encode("utf-8")
+          if due:
+              with open("message.txt", "w") as f:
+                  import random
+                  f.write(str(random.randint(1, 100)))
 
-                  req = urllib.request.Request(
-                      os.environ["DISCORD_WEBHOOK_URL"],
-                      data=payload,
-                      headers={"Content-Type": "application/json"},
-                      method="POST"
-                  )
+              sent.add(due)
+              data["sent_iso"] = sorted(sent)
 
-                  urllib.request.urlopen(req)
+              with open("schedule.json", "w") as f:
+                  json.dump(data, f, ensure_ascii=False, indent=2)
 
-                  sent.add(t)
-
-          data["sent_iso"] = sorted(sent)
-
-          with open("schedule.json", "w") as f:
-              json.dump(data, f, ensure_ascii=False, indent=2)
+              print("SEND")
+          else:
+              print("NO_SEND")
           PY
+
+          if [ -f message.txt ]; then
+            MSG=$(cat message.txt)
+
+            curl -v -X POST "$DISCORD_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d "{\"content\":\"$MSG\"}"
+          fi
 
       - name: Commit sent status
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+
           git add schedule.json
+
           git commit -m "Update sent status" || echo "No changes"
+
           git push
