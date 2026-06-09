@@ -2,13 +2,18 @@ name: rndm planner (weekly 7 random times)
 
 on:
   schedule:
-    - cron: "0 15 * * 0"   # 毎週月曜0:15 JST
-  workflow_dispatch: {}     # 手動実行を有効化
+    - cron: "15 15 * * 0"   # 毎週月曜0:15 JST
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
 
 jobs:
   generate-schedule:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Generate schedule.json (7 random 45-min slots within the week)
         run: |
           python - << 'PY'
@@ -18,25 +23,20 @@ jobs:
           JST = timezone(timedelta(hours=9))
           now = datetime.now(JST)
           week_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-          week_start = week_start - timedelta(days=week_start.weekday())  # 月曜0:00基準
+          week_start = week_start - timedelta(days=week_start.weekday())
 
-          # 45分刻みの全スロットを作る
           all_slots = int((7*24*60)/45)
           candidates = [week_start + timedelta(minutes=45*s) for s in range(all_slots)]
 
-          # 今より未来のスロットだけ残す（1分のバッファ付き）
           future = [t for t in candidates if t >= now + timedelta(minutes=1)]
 
-          # 週末などで未来が少ない場合は、次週に繰り越して7つ確保
           i = 0
           while len(future) < 7:
               future.append(candidates[i] + timedelta(days=7))
               i += 1
 
-          # 未来スロットからランダムに7つ選択
           times = sorted(random.sample(future, 7))
 
-          # JSONに保存
           data = {
               "week_start_iso": week_start.isoformat(),
               "times_iso": [t.isoformat() for t in times],
@@ -46,3 +46,11 @@ jobs:
           with open("schedule.json", "w") as f:
               json.dump(data, f, ensure_ascii=False, indent=2)
           PY
+
+      - name: Commit schedule.json
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add schedule.json
+          git commit -m "Update random schedule" || echo "No changes"
+          git push
