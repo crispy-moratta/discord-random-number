@@ -1,8 +1,8 @@
-name: rndm planner (weekly 7 random times)
+name: rndm planner (weekly 14 random times)
 
 on:
   schedule:
-    - cron: "15 15 * * 0"   # 毎週月曜0:15 JST
+    - cron: "15 15 * * 0" # 毎週月曜 0:15 JST
   workflow_dispatch: {}
 
 permissions:
@@ -11,31 +11,50 @@ permissions:
 jobs:
   generate-schedule:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate schedule.json (7 random 45-min slots within the week)
+      - name: Generate schedule.json (14 random 45-min slots within the week)
         run: |
-          python - << 'PY'
-          import json, random
+          python3 << 'PY'
+          import json
+          import random
           from datetime import datetime, timedelta, timezone
 
           JST = timezone(timedelta(hours=9))
           now = datetime.now(JST)
-          week_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+          week_start = now.replace(
+              hour=0,
+              minute=0,
+              second=0,
+              microsecond=0
+          )
           week_start = week_start - timedelta(days=week_start.weekday())
 
-          all_slots = int((7*24*60)/45)
-          candidates = [week_start + timedelta(minutes=45*s) for s in range(all_slots)]
+          # 1週間を45分刻みで分割
+          all_slots = int((7 * 24 * 60) / 45)
 
-          future = [t for t in candidates if t >= now + timedelta(minutes=1)]
+          candidates = [
+              week_start + timedelta(minutes=45 * s)
+              for s in range(all_slots)
+          ]
 
+          # 今より未来だけ残す
+          future = [
+              t for t in candidates
+              if t >= now + timedelta(minutes=1)
+          ]
+
+          # 足りない場合は次週へ
           i = 0
-          while len(future) < 7:
+          while len(future) < 14:
               future.append(candidates[i] + timedelta(days=7))
               i += 1
 
-          times = sorted(random.sample(future, 7))
+          # ランダムに14件抽出
+          times = sorted(random.sample(future, 14))
 
           data = {
               "week_start_iso": week_start.isoformat(),
@@ -43,14 +62,21 @@ jobs:
               "sent_iso": []
           }
 
-          with open("schedule.json", "w") as f:
+          with open("schedule.json", "w", encoding="utf-8") as f:
               json.dump(data, f, ensure_ascii=False, indent=2)
+
+          print("Generated 14 random timestamps")
+          for t in times:
+              print(t.isoformat())
           PY
 
       - name: Commit schedule.json
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+
           git add schedule.json
+
           git commit -m "Update random schedule" || echo "No changes"
+
           git push
