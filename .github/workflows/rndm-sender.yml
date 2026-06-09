@@ -21,6 +21,7 @@ jobs:
         run: |
           python3 << 'PY'
           import json
+          import random
           from datetime import datetime, timedelta, timezone
 
           JST = timezone(timedelta(hours=9))
@@ -30,28 +31,33 @@ jobs:
               data = json.load(f)
 
           sent = set(data.get("sent_iso", []))
+          due = []
 
-          due = None
-
-          for t in data["times_iso"]:
+          for t in data.get("times_iso", []):
               dt = datetime.fromisoformat(t)
-
               if dt <= now and t not in sent:
-                  due = t
-                  break
+                  due.append(t)
 
           if due:
-              with open("message.txt", "w") as f:
-                  import random
-                  f.write(str(random.randint(1, 100)))
+              emojis = ["🧊", "🪨", "🍵", "🧱", "🪙", "📎", "🍎", "💡", "🍰", "👐"]
 
-              sent.add(due)
+              if random.random() < 0.1:
+                  message = random.choice(emojis)
+              else:
+                  message = str(random.randint(1, 100))
+
+              with open("message.txt", "w") as f:
+                  f.write(message)
+
+              for t in due:
+                  sent.add(t)
+
               data["sent_iso"] = sorted(sent)
 
               with open("schedule.json", "w") as f:
                   json.dump(data, f, ensure_ascii=False, indent=2)
 
-              print("SEND")
+              print(f"SEND: {message}")
           else:
               print("NO_SEND")
           PY
@@ -70,7 +76,5 @@ jobs:
           git config user.email "github-actions@github.com"
 
           git add schedule.json
-
           git commit -m "Update sent status" || echo "No changes"
-
           git push
