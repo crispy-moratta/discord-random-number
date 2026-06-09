@@ -15,6 +15,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check schedule
+      - name: Check schedule and send Discord message
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          cat schedule.json
+          python - << 'PY'
+          import json
+          import os
+          import random
+          import urllib.request
+          from datetime import datetime, timedelta, timezone
+
+          JST = timezone(timedelta(hours=9))
+          now = datetime.now(JST)
+
+          with open("schedule.json") as f:
+              data = json.load(f)
+
+          sent = set(data.get("sent_iso", []))
+
+          for t in data["times_iso"]:
+              dt = datetime.fromisoformat(t)
+
+              if dt <= now and t not in sent:
+
+                  payload = json.dumps({
+                      "content": str(random.randint(1, 100))
+                  }).encode("utf-8")
+
+                  req = urllib.request.Request(
+                      os.environ["DISCORD_WEBHOOK_URL"],
+                      data=payload,
+                      headers={"Content-Type": "application/json"}
+                  )
+
+                  urllib.request.urlopen(req)
+
+                  sent.add(t)
+
+          data["sent_iso"] = sorted(sent)
+
+          with open("schedule.json", "w") as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+          PY
+
+      - name: Commit sent status
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add schedule.json
+          git commit -m "Update sent status" || echo "No changes"
+          git push
