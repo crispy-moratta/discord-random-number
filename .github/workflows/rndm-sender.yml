@@ -47,6 +47,7 @@ jobs:
                       os.environ["DISCORD_WEBHOOK_URL"],
                       data=payload,
                       headers={"Content-Type": "application/json"}
+                      method="POST"
                   )
 
                   urllib.request.urlopen(req)
