@@ -1,68 +1,122 @@
-name: rndm sender (dispatch at scheduled random times)
+name: rndm sender
+
 on:
   schedule:
-    - cron: "*/15 * * * *"   # 15分おきにチェック
-  workflow_dispatch: {}
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   send:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - name: Check schedule and maybe send
+
+      - name: Check schedule and send Discord message
         env:
-          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           if [ ! -f schedule.json ]; then
             echo "No schedule.json yet; skip."
             exit 0
           fi
 
-          python - << 'PY'
-          import json, os, sys, random, subprocess
-          from datetime import datetime, timedelta, timezone
-          JST = timezone(timedelta(hours=9))
-          now = datetime.now(JST)
+          python3 << 'PY'
+          import json
+          import random
+          import urllib.request
+          import urllib.error
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
 
-          with open("schedule.json", "r") as f:
-            data = json.load(f)
+          DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"].strip()
 
-          times = [datetime.fromisoformat(t) for t in data.get("times_iso", [])]
-          sent  = set(data.get("sent_iso", []))
-          window = timedelta(minutes=15)
+          now = datetime.now(ZoneInfo("Asia/Tokyo"))
 
-          due = [t for t in times if t.isoformat() not in sent and t <= now < (t + window)]
+          with open("schedule.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          times = data.get("times_iso", [])
+          sent = set(data.get("sent_iso", []))
+
+          due = []
+
+          for t in times:
+              dt = datetime.fromisoformat(t)
+
+              print(f"CHECK: {t}")
+              print(f"NOW  : {now.isoformat()}")
+
+              if dt <= now and t not in sent:
+                  due.append(t)
+
+          print(f"DUE_COUNT: {len(due)}")
 
           if not due:
-            print("No due slot; skip.")
-            sys.exit(0)
+              print("NO_SEND")
+              raise SystemExit(0)
 
-          url = os.environ.get("WEBHOOK_URL", "")
-          if not url:
-            sys.exit(1)
+          emojis = [
+              "🧊",
+              "🪨",
+              "🍵",
+              "🧱",
+              "🪙",
+              "📎",
+              "🍎",
+              "💡",
+              "🍰",
+              "👐"
+          ]
 
-          for t in due:
-            n = f"{random.randint(1,9999):04d}"
-            subprocess.run([
-              "curl","-sS","-H","Content-Type: application/json",
-              "-d", f'{{"content":"{n}"}}', url
-            ])
-            sent.add(t.isoformat())
+          if random.random() < 0.1:
+              message = random.choice(emojis)
+          else:
+              message = str(random.randint(1, 100))
 
-          data["sent_iso"] = sorted(sent)
-          with open("schedule.json","w") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+          print("SEND_TRIGGERED")
+          print("MESSAGE:", message)
+          print("DUE:", due)
+
+          payload = json.dumps({
+              "content": message
+          }).encode("utf-8")
+
+          req = urllib.request.Request(
+              DISCORD_WEBHOOK_URL,
+              data=payload,
+              headers={
+                  "Content-Type": "application/json",
+                  "User-Agent": "GitHubActions-DiscordWebhook/1.0"
+              },
+              method="POST"
+          )
+
+          response = urllib.request.urlopen(req)
+
+          print("STATUS:", response.status)
+          print("SENT_OK")
+
+          data["sent_iso"] = sorted(sent.union(due))
+
+          with open("schedule.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+
+          print("SENT_STATUS_UPDATED")
           PY
 
-      - name: Commit sent marks (if any)
+      - name: Commit sent status
         run: |
-          if git diff --quiet; then
-            echo "No changes to commit."
-          else
-            git config user.name "github-actions"
-            git config user.email "actions@github.com"
-            git add schedule.json
-            git commit -m "mark: sent slots"
-            git push
-          fi
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+
+          git add schedule.json
+
+          git diff --cached --quiet || \
+            git commit -m "Update sent status"
+
+          git push
