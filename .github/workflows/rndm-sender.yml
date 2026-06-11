@@ -1,103 +1,108 @@
 name: rndm sender
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
-  workflow_dispatch:
+schedule:
+- cron: "*/5 * * * *"
+workflow_dispatch:
 
 permissions:
-  contents: write
+contents: write
 
 jobs:
-  send:
-    runs-on: ubuntu-latest
+send:
+runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+```
+steps:
+  - uses: actions/checkout@v4
 
-      - name: Check schedule and send Discord message
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          python3 << 'PY'
-          import json
-          import random
-          import urllib.request
-          from datetime import datetime
-          from zoneinfo import ZoneInfo
+  - name: Check schedule and send Discord message
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+    run: |
+      python3 << 'PY'
+      import json
+      import random
+      import urllib.request
+      import os
+      from datetime import datetime
+      from zoneinfo import ZoneInfo
 
-          now = datetime.now(ZoneInfo("Asia/Tokyo"))
+      DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
 
-          with open("schedule.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
+      now = datetime.now(ZoneInfo("Asia/Tokyo"))
 
-          times = data["times_iso"]
-          sent = set(data["sent_iso"])
+      with open("schedule.json", "r", encoding="utf-8") as f:
+          data = json.load(f)
 
-          due = []
+      times = data["times_iso"]
+      sent = set(data["sent_iso"])
 
-          for t in times:
-              dt = datetime.fromisoformat(t)
+      due = []
 
-              print(f"CHECK: {t}")
-              print(f"NOW  : {now.isoformat()}")
+      for t in times:
+          dt = datetime.fromisoformat(t)
 
-              if dt <= now and t not in sent:
-                  due.append(t)
+          print(f"CHECK: {t}")
+          print(f"NOW  : {now.isoformat()}")
 
-          print(f"DUE_COUNT: {len(due)}")
+          if dt <= now and t not in sent:
+              due.append(t)
 
-          if not due:
-              print("NO_SEND")
-              raise SystemExit(0)
+      print(f"DUE_COUNT: {len(due)}")
 
-          emojis = [
-              "🧊",
-              "🪨",
-              "🍵",
-              "🧱",
-              "🪙",
-              "📎",
-              "🍎",
-              "💡",
-              "🍰",
-              "👐"
-          ]
+      if not due:
+          print("NO_SEND")
+          raise SystemExit(0)
 
-          message = random.choice(emojis)
+      emojis = [
+          "🧊",
+          "🪨",
+          "🍵",
+          "🧱",
+          "🪙",
+          "📎",
+          "🍎",
+          "💡",
+          "🍰",
+          "👐"
+      ]
 
-          print("SEND_TRIGGERED")
-          print("MESSAGE:", message)
-          print("DUE:", due)
+      message = random.choice(emojis)
 
-          payload = json.dumps({
-              "content": message
-          }).encode("utf-8")
+      print("SEND_TRIGGERED")
+      print("MESSAGE:", message)
+      print("DUE:", due)
 
-          req = urllib.request.Request(
-              DISCORD_WEBHOOK_URL,
-              data=payload,
-              headers={"Content-Type": "application/json"}
-          )
+      payload = json.dumps({
+          "content": message
+      }).encode("utf-8")
 
-          urllib.request.urlopen(req)
+      req = urllib.request.Request(
+          DISCORD_WEBHOOK_URL,
+          data=payload,
+          headers={"Content-Type": "application/json"}
+      )
 
-          data["sent_iso"].extend(due)
+      urllib.request.urlopen(req)
 
-          with open("schedule.json", "w", encoding="utf-8") as f:
-              json.dump(data, f, ensure_ascii=False, indent=2)
+      data["sent_iso"].extend(due)
 
-          print("SENT_OK")
-          PY
+      with open("schedule.json", "w", encoding="utf-8") as f:
+          json.dump(data, f, ensure_ascii=False, indent=2)
 
-      - name: Commit sent status
-        run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
+      print("SENT_OK")
+      PY
 
-          git add schedule.json
+  - name: Commit sent status
+    run: |
+      git config user.name github-actions
+      git config user.email github-actions@github.com
 
-          git diff --cached --quiet || \
-          git commit -m "Update sent status"
+      git add schedule.json
 
-          git push
+      git diff --cached --quiet || \
+      git commit -m "Update sent status"
+
+      git push
+```
