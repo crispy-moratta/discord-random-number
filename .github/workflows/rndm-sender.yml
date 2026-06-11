@@ -1,135 +1,122 @@
 name: rndm sender
 
-"on":
-schedule:
-- cron: "*/5 * * * *"
-workflow_dispatch:
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 permissions:
-contents: write
+  contents: write
 
 jobs:
-send:
-runs-on: ubuntu-latest
+  send:
+    runs-on: ubuntu-latest
 
-```
-steps:
-  - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-  - name: Check schedule and send Discord message
-    env:
-      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-    run: |
-      python3 << 'PY'
-      import json
-      import random
-      import urllib.request
-      import urllib.error
-      import os
-      from datetime import datetime
-      from zoneinfo import ZoneInfo
+      - name: Check schedule and send Discord message
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python3 << 'PY'
+          import json
+          import random
+          import urllib.request
+          import urllib.error
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
 
-      DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"].strip()
+          DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"].strip()
 
-      if not DISCORD_WEBHOOK_URL.startswith("https://discord.com/api/webhooks/"):
-          raise ValueError("DISCORD_WEBHOOK_URL is not a valid Discord webhook URL")
+          now = datetime.now(ZoneInfo("Asia/Tokyo"))
 
-      now = datetime.now(ZoneInfo("Asia/Tokyo"))
+          with open("schedule.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
 
-      with open("schedule.json", "r", encoding="utf-8") as f:
-          data = json.load(f)
+          times = data["times_iso"]
+          sent = set(data["sent_iso"])
 
-      times = data["times_iso"]
-      sent = set(data["sent_iso"])
+          due = []
 
-      due = []
+          for t in times:
+              dt = datetime.fromisoformat(t)
 
-      for t in times:
-          dt = datetime.fromisoformat(t)
+              print(f"CHECK: {t}")
+              print(f"NOW  : {now.isoformat()}")
 
-          print(f"CHECK: {t}")
-          print(f"NOW  : {now.isoformat()}")
+              if dt <= now and t not in sent:
+                  due.append(t)
 
-          if dt <= now and t not in sent:
-              due.append(t)
+          print(f"DUE_COUNT: {len(due)}")
 
-      print(f"DUE_COUNT: {len(due)}")
+          if not due:
+              print("NO_SEND")
+              raise SystemExit(0)
 
-      if not due:
-          print("NO_SEND")
-          raise SystemExit(0)
+          emojis = [
+              "🧊",
+              "🪨",
+              "🍵",
+              "🧱",
+              "🪙",
+              "📎",
+              "🍎",
+              "💡",
+              "🍰",
+              "👐"
+          ]
 
-      emojis = [
-          "🧊",
-          "🪨",
-          "🍵",
-          "🧱",
-          "🪙",
-          "📎",
-          "🍎",
-          "💡",
-          "🍰",
-          "👐"
-      ]
+          if random.random() < 0.1:
+              message = random.choice(emojis)
+          else:
+              message = str(random.randint(1, 100))
 
-      # 90%で数字、10%で絵文字
-      if random.random() < 0.1:
-          message = random.choice(emojis)
-      else:
-          message = str(random.randint(1, 100))
+          print("SEND_TRIGGERED")
+          print("MESSAGE:", message)
+          print("DUE:", due)
 
-      print("SEND_TRIGGERED")
-      print("MESSAGE:", message)
-      print("DUE:", due)
+          payload = json.dumps({
+              "content": message
+          }).encode("utf-8")
 
-      payload = json.dumps({
-          "content": message
-      }).encode("utf-8")
-
-      req = urllib.request.Request(
-          DISCORD_WEBHOOK_URL,
-          data=payload,
-          headers={
-              "Content-Type": "application/json",
-              "User-Agent": "GitHubActions-DiscordWebhook/1.0"
-          },
-          method="POST"
-      )
-
-      try:
-          response = urllib.request.urlopen(req)
-
-          print("STATUS:", response.status)
-          print("SENT_OK")
-
-      except urllib.error.HTTPError as e:
-          print("HTTP_ERROR:", e.code)
+          req = urllib.request.Request(
+              DISCORD_WEBHOOK_URL,
+              data=payload,
+              headers={
+                  "Content-Type": "application/json",
+                  "User-Agent": "GitHubActions-DiscordWebhook/1.0"
+              },
+              method="POST"
+          )
 
           try:
+              response = urllib.request.urlopen(req)
+              print("STATUS:", response.status)
+              print("SENT_OK")
+          except urllib.error.HTTPError as e:
+              print("HTTP_ERROR:", e.code)
               print("ERROR_BODY:")
               print(e.read().decode())
-          except Exception:
-              pass
+              raise
 
-          raise
+          data["sent_iso"].extend(due)
 
-      data["sent_iso"].extend(due)
+          with open("schedule.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
 
-      with open("schedule.json", "w", encoding="utf-8") as f:
-          json.dump(data, f, ensure_ascii=False, indent=2)
+          print("SENT_STATUS_UPDATED")
+          PY
 
-      print("SENT_STATUS_UPDATED")
-      PY
+      - name: Commit sent status
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
 
-  - name: Commit sent status
-    run: |
-      git config user.name github-actions
-      git config user.email github-actions@github.com
+          git add schedule.json
 
-      git add schedule.json
+          git diff --cached --quiet || \
+            git commit -m "Update sent status"
 
-      git diff --cached --quiet || \
-        git commit -m "Update sent status"
-
-      git push
-```
+          git push
