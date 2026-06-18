@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate schedule.json (2 random 45-min slots within the week)
+      - name: Generate schedule.json (1 random 45-min slots within the week)
         run: |
           python3 << 'PY'
           import json
@@ -53,8 +53,8 @@ jobs:
               future.append(candidates[i] + timedelta(days=7))
               i += 1
 
-          # ランダムに2件抽出
-          times = sorted(random.sample(future, 2))
+          # ランダムに1件抽出
+          times = sorted(random.sample(future, 1))
 
           data = {
               "week_start_iso": week_start.isoformat(),
@@ -65,7 +65,7 @@ jobs:
           with open("schedule.json", "w", encoding="utf-8") as f:
               json.dump(data, f, ensure_ascii=False, indent=2)
 
-          print("Generated 14 random timestamps")
+          print("Generated 1 random timestamps")
           for t in times:
               print(t.isoformat())
           PY
